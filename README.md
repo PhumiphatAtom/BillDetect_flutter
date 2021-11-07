@@ -1,6 +1,6 @@
 # billdetect
 
-A new Flutter project.
+Billdetect Flutter Project
 
 ## Getting Started
 

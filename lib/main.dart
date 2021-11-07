@@ -1,10 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:billdetect/getBillDetect.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_native_image/flutter_native_image.dart';
 import 'package:soundpool/soundpool.dart';
 import 'dart:convert' as convert;
+import 'package:flutter/foundation.dart';
+import 'package:billdetect/model.dart';
+
+Soundpool _soundpool;
 
 void main() {
   runApp(MyApp());
@@ -20,6 +26,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
       ),
       home: MyHomePage(title: 'Flutter Demo Home Page'),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
@@ -39,15 +46,35 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
   var isCameraReady = false;
   XFile imageFile;
   List<GetBillDetect> billResult = [];
-
-
+  int _cheeringStreamId = -1;
+  File img;
   final _keyForm = GlobalKey<FormState>(); // Our created key
+  File imgResize;
 
   @override
   void initState() {
     super.initState();
     initCamera();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  Future<int> _loadCheering() async {
+    _soundpool = Soundpool(maxStreams: 2);
+    return await _soundpool.loadUri(_cheeringUrl);
+  }
+
+  double _rate = 1.0;
+  Future<int> _cheeringId;
+  Future<void> _playCheering() async {
+    var _sound = await _cheeringId;
+    _cheeringStreamId = await _soundpool.play(
+      _sound,
+      rate: _rate,
+    );
+  }
+
+  Future<void> _loadSounds() async {
+    _cheeringId = _loadCheering();
   }
 
   var inputText = "";
@@ -85,29 +112,49 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
 
   //API
   final String uploadUrl =
-      'https://8390-2001-fb1-82-c873-ccfe-4012-397e-5f0b.ngrok.io/upload-file/';
-
+      'https://6f12-2001-fb1-132-4bb6-7df8-b7b9-9841-760d.ngrok.io/upload-file/';
+  String soundLink = "";
   Future<String> uploadImage(filepath) async {
-    String fileName = filepath.split('/').last;
-    print("filename " + fileName);
-    print("filepath " + filepath);
-
+    ImageProperties properties =
+        await FlutterNativeImage.getImageProperties(filepath);
+    File compressedFile = await FlutterNativeImage.compressImage(filepath,
+        quality: 80, percentage: 60);
+    String filepath2 = compressedFile.path;
+    String fileName = filepath2.split('/').last;
+    // print("filepath "+filepath2);
+    // print("sound link"+soundLink);
     FormData data = FormData.fromMap({
       "uploaded_file": await MultipartFile.fromFile(
-        filepath,
+        filepath2,
         filename: fileName,
       ),
     });
 
+    Result result;
+
     Dio dio = new Dio();
     Soundpool pool = Soundpool(streamType: StreamType.notification);
-
-    dio
-        .post(uploadUrl, data: data)
-        .then((response) => (response))
-        .catchError((error) => print("err" + error));
-
+    // void res(response){
+    //   Map<String, dynamic> user = jsonDecode(response);
+    //   print('Howdy, ${user['Detect']}!');
+    // }
+    try {
+      Response resultData = await dio.post(uploadUrl, data: data);
+      // final userMap = jsonDecode(resultData.data);
+      result = Result.fromJson(resultData.data);
+      // print(result.link);
+      soundLink = result.link;
+      // print(soundLink);
+      _loadSounds();
+      _playCheering();
+    } catch (e) {
+      print('Error creating user: $e');
+    }
+    // .then((response) => (response))
+    // .catchError((error) => print("err" + error));
   }
+
+  String get _cheeringUrl => kIsWeb ? soundLink.split('/').last : soundLink;
 
   @override
   Widget build(BuildContext context) {
@@ -164,13 +211,21 @@ class _MyHomePageState extends State<MyHomePage> with WidgetsBindingObserver {
     });
   }
 
+  // Future<void> resizeImg(File img) async {
+  //   print('HelloPath :' + img.path);
+  //   imgResize = await FlutterNativeImage.compressImage(img.path,
+  //       quality: 100, percentage: 70);
+  //   // print('Resize :'+imgResize.path);
+  // }
+
   captureImage(BuildContext context) {
     _controller.takePicture().then((file) {
       setState(() {
         imageFile = file;
+        img = File(imageFile.path);
       });
       if (mounted) {
-        var res = uploadImage(imageFile.path);
+        var res = uploadImage(img.path);
         if (res == true) {
           print("hello");
         } else {
